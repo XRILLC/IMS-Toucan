@@ -1,6 +1,103 @@
 [project]
 name = "ims-toucan"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.14"
-dependencies = []
+description = "Massively multilingual Text-to-Speech toolkit supporting 7000+ languages"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # Core ML framework
+    "torch",
+    "torchaudio",
+    "torch-complex",
+
+    # Audio processing
+    "librosa",
+    "soundfile",
+    "sounddevice",
+    "praat-parselmouth",
+    "pyloudnorm",
+
+    # Phonetics and linguistics (core)
+    "epitran",
+    "phonemizer",
+    "phonepiece",
+    "dragonmapper",  # Chinese text processing - used in core TextFrontend
+    "pypinyin",      # Chinese pinyin conversion - used in core TextFrontend
+    "transphone",    # Multi-language G2P - required in TextFrontend.__init__ for all languages
+
+    # Scientific computing
+    "numpy",
+    "scipy",
+    "cvxopt",
+    "scikit-learn",
+
+    # Data handling
+    "pandas",
+    "datasets",
+    "huggingface-hub<1.0",  # Pin <1.0 until speechbrain updates API compatibility
+
+    # Visualization
+    "matplotlib",
+    "imageio",
+
+    # Utilities
+    "pip",  # Required by transphone and huggingface operations
+    "tqdm",
+    "rich",
+    "pyyaml",
+    "einops",
+    "networkx",
+    "dotwiz",
+
+    # ML frameworks and tools
+    # Using git version for torchaudio 2.9 compatibility fix (PR #2978)
+    # TODO: Replace with pypi version when speechbrain > 1.0.3 is released
+    "speechbrain @ git+https://github.com/speechbrain/speechbrain.git",
+    "alias-free-torch",
+    "pykan",
+]
+
+[project.optional-dependencies]
+# Additional language-specific helpers (truly optional - used conditionally in TextFrontend)
+asian-extra = [
+    "pykakasi",    # Japanese kana/kanji conversion (loaded dynamically for Japanese)
+    "jamo",        # Korean jamo handling (optional utility)
+    "g2pk",        # Korean grapheme-to-phoneme alternative (optional)
+]
+
+# GUI and interactive features
+gui = [
+    "pyqt5",
+    "pyqtgraph",
+    "pynput",
+    "pyautogui",
+]
+
+# Web interface
+web = [
+    "gradio",
+]
+
+# Training and experiment tracking
+training = [
+    "wandb",
+]
+
+# Geolocation features
+geo = [
+    "geopy",
+]
+
+# Everything
+all = [
+    "pykakasi",
+    "jamo",
+    "g2pk",
+    "pyqt5",
+    "pyqtgraph",
+    "pynput",
+    "pyautogui",
+    "gradio",
+    "wandb",
+    "geopy",
+]
