@@ -22,13 +22,58 @@ from Utility.utils import float2pcm
 
 
 class ToucanTTSInterface(torch.nn.Module):
+    """High-level interface for ToucanTTS text-to-speech synthesis.
+
+    This class provides a simple API for multilingual speech synthesis supporting 7000+ languages.
+    It handles model loading, text preprocessing, acoustic model inference, and vocoding.
+
+    The interface supports:
+    - Multilingual TTS with dynamic language switching
+    - Voice cloning from reference audio
+    - Controllable prosody (speed, pitch variance, energy)
+    - Batch processing of multiple utterances
+
+    Example:
+        >>> tts = ToucanTTSInterface(device="cuda", language="eng")
+        >>> tts.read_to_file(["Hello world"], "output.wav")
+        >>> tts.set_language("deu")
+        >>> tts.set_utterance_embedding("reference_voice.wav")
+        >>> tts.read_to_file(["Guten Tag"], "german.wav")
+
+    Attributes:
+        device (str): Device for computation ("cpu" or "cuda").
+        language (str): Current language (ISO 639-3 code).
+        text2phone: Text frontend for phoneme conversion.
+        phone2mel: Acoustic model (ToucanTTS).
+        vocoder: Neural vocoder (HiFiGAN).
+        default_utterance_embedding (Tensor): Current speaker embedding.
+    """
 
     def __init__(self,
-                 device="cpu",  # device that everything computes on. If a cuda device is available, this can speed things up by an order of magnitude.
-                 tts_model_path=None,  # path to the ToucanTTS checkpoint or just a shorthand if run standalone
-                 vocoder_model_path=None,  # path to the Vocoder checkpoint
-                 language="eng",  # initial language of the model, can be changed later with the setter methods
+                 device="cpu",
+                 tts_model_path=None,
+                 vocoder_model_path=None,
+                 language="eng",
                  ):
+        """Initialize ToucanTTS interface with models and configuration.
+
+        Args:
+            device: Device for computation. Options: "cpu" or "cuda". CUDA provides
+                10x+ speedup if available. Defaults to "cpu".
+            tts_model_path: Path to ToucanTTS checkpoint file (.pt), shorthand name
+                for auto-resolution (e.g., "nancy" -> Models/ToucanTTS_nancy/best.pt),
+                or None to auto-download pretrained model from Hugging Face.
+                Defaults to None (auto-download).
+            vocoder_model_path: Path to HiFiGAN vocoder checkpoint (.pt), or None
+                to auto-download pretrained vocoder. Defaults to None (auto-download).
+            language: Initial language for synthesis (ISO 639-3 code). Can be changed
+                later with set_language(). Supports 7000+ languages.
+                Defaults to "eng" (English).
+
+        Raises:
+            RuntimeError: If model files cannot be loaded or device is unavailable.
+            ValueError: If language code is invalid.
+        """
         super().__init__()
         self.device = device
         if tts_model_path is None:
@@ -84,6 +129,28 @@ class ToucanTTSInterface(torch.nn.Module):
         self.language = language
 
     def set_utterance_embedding(self, path_to_reference_audio="", embedding=None):
+        """Set speaker embedding for voice cloning.
+
+        Extracts speaker characteristics from reference audio to clone voice identity.
+        Supports single or multiple reference files (averaged for robustness).
+
+        Args:
+            path_to_reference_audio: Path to reference audio file(s) for voice cloning.
+                Can be a single string path or list of paths. Multiple files are averaged
+                to create a more robust embedding. Supports WAV, FLAC, MP3 formats.
+                Defaults to "" (no change).
+            embedding: Pre-computed speaker embedding tensor. If provided, path_to_reference_audio
+                is ignored. Useful for caching embeddings. Defaults to None.
+
+        Raises:
+            AssertionError: If reference audio path does not exist.
+            RuntimeError: If audio loading or embedding extraction fails.
+
+        Example:
+            >>> tts.set_utterance_embedding("voice.wav")
+            >>> tts.set_utterance_embedding(["voice1.wav", "voice2.wav"])  # Average multiple
+            >>> tts.set_utterance_embedding(embedding=cached_emb)  # Use pre-computed
+        """
         if embedding is not None:
             self.default_utterance_embedding = embedding.squeeze().to(self.device)
             return
@@ -106,8 +173,24 @@ class ToucanTTSInterface(torch.nn.Module):
             self.default_utterance_embedding = sum(speaker_embs) / len(speaker_embs)
 
     def set_language(self, lang_id):
-        """
-        The id parameter actually refers to the shorthand. This has become ambiguous with the introduction of the actual language IDs
+        """Change the synthesis language.
+
+        Updates both the text-to-phoneme frontend and the acoustic model's language embedding
+        to match the target language. Supports 7000+ languages via ISO 639-3 codes.
+
+        Args:
+            lang_id: Language code (ISO 639-3 standard). Examples: "eng" (English),
+                "deu" (German), "fra" (French), "jpn" (Japanese), "cmn" (Mandarin).
+                See Utility/language_list.md for full list.
+
+        Example:
+            >>> tts.set_language("deu")  # Switch to German
+            >>> tts.read_to_file(["Guten Tag"], "german.wav")
+            >>> tts.set_language("fra")  # Switch to French
+            >>> tts.read_to_file(["Bonjour"], "french.wav")
+
+        Note:
+            The language setting persists across all subsequent synthesis calls until changed.
         """
         if self.language != lang_id:
             self.set_phonemizer_language(lang_id=lang_id)
