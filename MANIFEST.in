@@ -1,0 +1,16 @@
+include README.md
+include LICENSE
+include CLAUDE.md
+include requirements.txt
+include pyproject.toml
+
+recursive-include Preprocessing *.py
+recursive-include Modules *.py
+recursive-include Utility *.py
+recursive-include InferenceInterfaces *.py
+recursive-include Recipes *.py
+
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .venv
