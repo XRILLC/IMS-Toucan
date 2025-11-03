@@ -1,3 +1,36 @@
+"""ToucanTTS: FastSpeech 2 variant with flow matching decoder for multilingual TTS.
+
+This module implements the core ToucanTTS acoustic model architecture, which combines:
+    - Conformer encoder and decoder (inspired by ESPnet)
+    - Conditional Flow Matching decoder (inspired by Matcha-TTS and StableTTS)
+    - FastPitch-style pitch and energy predictors for controllability
+    - Language embeddings for 7000+ language support
+    - Speaker embeddings for multi-speaker synthesis
+
+Architecture overview:
+    Text → Encoder → [Duration/Pitch/Energy Predictors] → Length Regulator → Decoder → Spectrogram
+
+Key features:
+    - Multilingual: Language conditioning via AdaIN/ConditionalLayerNorm/ConcatProject
+    - Multi-speaker: Speaker embedding conditioning
+    - Controllable: Explicit duration/pitch/energy prediction and modification
+    - High-quality: Flow matching decoder for improved spectrogram quality
+    - Articulatory inputs: Phonemes represented as articulatory feature vectors
+
+Example:
+    >>> model = ToucanTTS(
+    ...     input_feature_dimensions=64,
+    ...     attention_dimension=384,
+    ...     encoder_layers=6,
+    ...     decoder_layers=6
+    ... )
+    >>> # Training
+    >>> loss = model(text_batch, text_lengths, speech_batch, speech_lengths,
+    ...              durations, pitch, energy, utterance_embedding, lang_ids)
+    >>> # Inference
+    >>> spectrogram = model.inference(text, utterance_embedding=speaker_emb, lang_id=lang)
+"""
+
 import torch
 import torch.nn.functional as torchfunc
 from torch.nn import Linear
@@ -329,6 +362,51 @@ class ToucanTTS(torch.nn.Module):
                  utterance_embedding=None,
                  lang_ids=None,
                  run_stochastic=False):
+        """Internal forward pass for training and inference.
+
+        This method handles both training (with teacher forcing) and inference (with
+        autoregressive prediction). It processes text through the encoder, predicts
+        or uses gold prosody values (duration/pitch/energy), upsamples via length
+        regulation, and decodes to spectrograms via flow matching.
+
+        Training mode (is_inference=False):
+            - Uses gold durations/pitch/energy for teacher forcing
+            - Computes prediction losses for duration/pitch/energy
+            - Returns losses for backpropagation
+
+        Inference mode (is_inference=True):
+            - Predicts durations/pitch/energy autoregressively
+            - Upsamples based on predicted durations
+            - Returns predicted spectrogram
+
+        Args:
+            text_tensors: Articulatory feature vectors. Shape: (batch, text_len, feat_dim).
+            text_lengths: Actual lengths of text sequences. Shape: (batch,).
+            gold_speech: Target mel-spectrograms for training. Shape: (batch, speech_len, spec_dim).
+            speech_lengths: Actual lengths of speech sequences. Shape: (batch,).
+            gold_durations: Ground truth phoneme durations for training. Shape: (batch, text_len).
+            gold_pitch: Ground truth pitch values per phoneme. Shape: (batch, text_len, 1).
+            gold_energy: Ground truth energy values per phoneme. Shape: (batch, text_len, 1).
+            is_inference: Whether in inference mode (True) or training mode (False).
+            utterance_embedding: Speaker embedding for conditioning. Shape: (batch, utt_emb_dim).
+            lang_ids: Language IDs for multilingual conditioning. Shape: (batch,).
+            run_stochastic: Whether to use stochastic flow matching decoder output.
+
+        Returns:
+            During training (is_inference=False):
+                Tuple of (preliminary_spectrogram, stochastic_loss, duration_loss,
+                         pitch_loss, energy_loss)
+
+            During inference (is_inference=True):
+                Tuple of (predicted_spectrogram, None, duration_predictions,
+                         pitch_predictions, energy_predictions)
+
+        Note:
+            - Text tensors are clamped to [0, 1] to handle articulatory modifier encoding
+            - Word boundaries are automatically set to zero duration during inference
+            - Utterance embeddings are L2-normalized before use
+            - Language embeddings are concatenated with speaker embeddings if both present
+        """
 
         text_tensors = torch.clamp(text_tensors, max=1.0)
         # this is necessary, because of the way we represent modifiers to keep them identifiable.
@@ -477,11 +555,51 @@ class ToucanTTS(torch.nn.Module):
         return outs.squeeze().transpose(0, 1)
 
     def _reset_parameters(self, init_type="xavier_uniform"):
+        """Initialize all model parameters using specified initialization scheme.
+
+        This method resets all model parameters (encoder, decoder, predictors, embeddings)
+        to random values using the specified initialization strategy.
+
+        Args:
+            init_type: Parameter initialization scheme. Options:
+                - "xavier_uniform": Xavier/Glorot uniform initialization
+                - "xavier_normal": Xavier/Glorot normal initialization
+                - "kaiming_uniform": He uniform initialization
+                - "kaiming_normal": He normal initialization
+                - "pytorch": PyTorch default initialization (no reset)
+                Defaults to "xavier_uniform".
+
+        Note:
+            Called automatically during __init__() unless init_type="pytorch".
+            Xavier initialization works well for tanh/sigmoid activations.
+            Kaiming initialization works well for ReLU activations.
+        """
         # initialize parameters
         if init_type != "pytorch":
             initialize(self, init_type)
 
     def reset_postnet(self, init_type="xavier_uniform"):
+        """Reinitialize only the flow matching decoder parameters.
+
+        Useful for recovering from training instabilities where the decoder
+        parameters have exploded or diverged. Resets only the flow matching
+        decoder while preserving encoder, predictors, and embeddings.
+
+        Args:
+            init_type: Parameter initialization scheme (same options as
+                _reset_parameters). Defaults to "xavier_uniform".
+
+        Example:
+            >>> model = ToucanTTS()
+            >>> # ... training loop ...
+            >>> # If decoder diverges:
+            >>> model.reset_postnet(init_type="xavier_uniform")
+            >>> # Continue training with fresh decoder parameters
+
+        Note:
+            This is preferable to full model reset when only the decoder
+            has diverged, as it preserves learned encoder representations.
+        """
         # useful for after they explode
         initialize(self.flow_matching_decoder, init_type)
 
