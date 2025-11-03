@@ -162,6 +162,88 @@ toucan-infer --input sentences.txt --output-dir outputs/ --language eng
 toucan-tts --interactive --language eng
 ```
 
+## Example 8: REST API Microservice
+
+### Starting the Service
+
+```bash
+# Start the microservice
+toucan-serve --host 127.0.0.1 --port 8000
+
+# Service will be available at http://127.0.0.1:8000
+# API docs at http://127.0.0.1:8000/docs
+```
+
+### Using cURL
+
+```bash
+# Health check
+curl http://127.0.0.1:8000/health
+
+# Synthesize speech
+curl -X POST "http://127.0.0.1:8000/synthesize" \
+     -H "Content-Type: application/json" \
+     -d '{"text": "Hello world", "language": "eng", "speed": 1.0}' \
+     --output output.wav
+
+# With voice cloning (using reference audio file)
+curl -X POST "http://127.0.0.1:8000/synthesize-with-reference" \
+     -F "text=Hello in cloned voice" \
+     -F "language=eng" \
+     -F "reference_audio=@reference_voice.wav" \
+     --output cloned.wav
+```
+
+### Using Python Requests
+
+```python
+import requests
+
+# Synthesize speech
+response = requests.post(
+    "http://127.0.0.1:8000/synthesize",
+    json={
+        "text": "Hello from the API",
+        "language": "eng",
+        "speed": 1.0
+    }
+)
+
+# Save audio
+with open("api_output.wav", "wb") as f:
+    f.write(response.content)
+```
+
+### Using JavaScript Fetch
+
+```javascript
+// Synthesize and play audio
+fetch('http://127.0.0.1:8000/synthesize', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+        text: 'Hello from JavaScript',
+        language: 'eng',
+        speed: 1.0
+    })
+})
+.then(response => response.blob())
+.then(blob => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+});
+```
+
+### Running the Example Client
+
+```bash
+# Run the comprehensive example client
+python examples/microservice_client_example.py
+```
+
+This generates three test audio files demonstrating different linguistic challenges.
+
 ## API Reference
 
 ### ToucanTTS Class
