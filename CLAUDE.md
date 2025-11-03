@@ -9,11 +9,35 @@ IMS Toucan is a massively multilingual Text-to-Speech (TTS) toolkit supporting 7
 ## Development Environment
 
 ### Prerequisites
-- Python 3.10 (recommended)
+- Python 3.13+ (required)
 - CUDA-enabled GPU (for training; inference works on CPU)
 - System packages: `libsndfile1`, `espeak-ng`, `ffmpeg`, `libasound-dev`, `libportaudio2`, `libsqlite3-dev`
+- Additional for Korean: `mecab`, `mecab-ko-dic` (for mecab-python3)
 
 ### Setup
+
+#### Modern Installation (Recommended)
+```bash
+# Install uv (fast dependency resolver)
+pip install uv
+
+# Create virtual environment and install core dependencies
+uv venv
+source .venv/bin/activate
+uv sync
+
+# Or install with all optional features
+uv sync --extra all
+
+# Available extras:
+# --extra asian-extra  # Japanese/Korean support (pykakasi, jamo, g2pk)
+# --extra gui          # PyQt5 interfaces
+# --extra web          # Gradio web interface
+# --extra training     # Weights & Biases logging
+# --extra all          # Everything
+```
+
+#### Legacy Installation (Backward Compatible)
 ```bash
 python -m venv <venv_path>
 source <venv_path>/bin/activate

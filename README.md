@@ -51,7 +51,7 @@ anyone to use.
 
 #### Basic Requirements
 
-Python 3.10 is the recommended version.
+Python 3.13 or higher is required.
 
 To install this toolkit, clone it onto the machine you want to use it on
 (should have at least one cuda enabled GPU if you intend to train models on that machine. For inference, you don't need
@@ -71,20 +71,45 @@ libsqlite3-dev
 
 Navigate to the directory you have cloned. We recommend creating and activating a
 [virtual environment](https://docs.python.org/3/library/venv.html)
-to install the basic requirements into. The commands below summarize everything you need to do under Linux. If you are
-running Windows, the second line needs to be changed, please have a look at
-the [venv documentation](https://docs.python.org/3/library/venv.html).
+to install the basic requirements into.
 
+#### Modern Installation (Recommended)
+
+The project now uses `pyproject.toml` for dependency management. We recommend using `uv` for fast, reliable dependency resolution:
+
+```bash
+# Install uv (fast dependency resolver)
+pip install uv
+
+# Create virtual environment and install core dependencies
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv sync
+
+# Or install with all optional features
+uv sync --extra all
 ```
+
+Available optional extras:
+- `--extra asian-extra` - Japanese/Korean support (pykakasi, jamo, g2pk)
+- `--extra gui` - PyQt5 graphical interfaces
+- `--extra web` - Gradio web interface
+- `--extra training` - Weights & Biases logging
+- `--extra all` - Install everything
+
+Note: For Korean support, you'll also need system packages `mecab` and `mecab-ko-dic`.
+
+#### Legacy Installation (Backward Compatible)
+
+If you prefer the traditional approach, you can still use `requirements.txt`:
+
+```bash
 python -m venv <path_to_where_you_want_your_env_to_be>
-
-source <path_to_where_you_want_your_env_to_be>/bin/activate
-
+source <path_to_where_you_want_your_env_to_be>/bin/activate  # On Windows: Scripts\activate
 pip install --no-cache-dir -r requirements.txt
 ```
 
-Run the second line everytime you start using the tool again to activate the virtual environment again, if you e.g.
-logged out in the meantime. To make use of a GPU, you don't need to do anything else on a Linux machine. On a Windows
+Run the source/activate line every time you start using the tool again to activate the virtual environment. To make use of a GPU, you don't need to do anything else on a Linux machine. On a Windows
 machine, have a look at [the official PyTorch website](https://pytorch.org/) for the install-command that enables GPU
 support.
 
