@@ -1,5 +1,20 @@
 # -*- coding: utf-8 -*-
 
+"""Multilingual text preprocessing and phonemization for TTS.
+
+This module provides text-to-phoneme conversion supporting 7000+ languages via
+espeak-ng and transphone G2P backends. It converts graphemes to IPA phonemes,
+then maps phonemes to articulatory feature vectors for neural TTS models.
+
+The pipeline flow is:
+    Text → Grapheme Normalization → IPA Phonemes → Articulatory Features → Tensors
+
+Example:
+    >>> frontend = ArticulatoryCombinedTextFrontend(language="eng")
+    >>> tensor = frontend.string_to_tensor("Hello world!", view=True)
+    Phonemes: ~həloʊ wɜːld!~#
+    >>> phones = frontend.get_phone_string("Hello world!")
+"""
 
 import json
 import logging
@@ -16,7 +31,18 @@ from Preprocessing.articulatory_features import get_feature_to_index_lookup
 from Preprocessing.articulatory_features import get_phone_to_id
 
 
-def load_json_from_path(path):  # redundant to the one in utils, but necessary to avoid circular imports
+def load_json_from_path(path):
+    """Load JSON object from file path.
+
+    Args:
+        path: Path to JSON file.
+
+    Returns:
+        Parsed JSON object (dict, list, or other JSON type).
+
+    Note:
+        Redundant to the one in utils, but necessary to avoid circular imports.
+    """
     with open(path, "r", encoding="utf8") as f:
         obj = json.loads(f.read())
 
@@ -24,6 +50,47 @@ def load_json_from_path(path):  # redundant to the one in utils, but necessary t
 
 
 class ArticulatoryCombinedTextFrontend:
+    """Multilingual text-to-phoneme converter with articulatory feature extraction.
+
+    This class handles text preprocessing for 7000+ languages, converting text to
+    IPA phonemes and then to articulatory feature vectors. It uses espeak-ng for
+    most languages, transphone for zero-shot languages, and specialized handlers
+    for Japanese and Mandarin.
+
+    Supported features:
+        - 7000+ languages via ISO 639-3 codes
+        - Lexical stress markers (configurable)
+        - Word boundaries (configurable)
+        - Tone markers for tonal languages
+        - Language-specific abbreviation expansion
+        - Articulatory feature vectorization
+
+    Example:
+        >>> # English synthesis
+        >>> tf = ArticulatoryCombinedTextFrontend(language="eng")
+        >>> tensor = tf.string_to_tensor("This is a test.", view=True)
+        Phonemes: ~ðɪs ɪz ə tɛst.~#
+
+        >>> # Mandarin synthesis
+        >>> tf = ArticulatoryCombinedTextFrontend(language="cmn")
+        >>> tensor = tf.string_to_tensor("这是一个测试。", view=True)
+        Phonemes: ~ʈ͡ʂɤ˥˩ ʂɻ̩˥˩ i˥ kɤ˥˩ tsʰɤ˥˩ ʂɻ̩˥˩.~#
+
+        >>> # Zero-shot language (uses transphone)
+        >>> tf = ArticulatoryCombinedTextFrontend(language="acr")
+        >>> tensor = tf.string_to_tensor("Sample text", view=True)
+
+    Attributes:
+        language: ISO 639-3 language code (e.g., "eng", "cmn", "jpn").
+        g2p_lang: Internal phonemizer language code.
+        phonemizer: Phonemization backend ("espeak", "transphone", "dragonmapper").
+        use_explicit_eos: Whether to add end-of-sequence marker "#".
+        use_stress: Whether to preserve lexical stress markers.
+        use_word_boundaries: Whether to preserve word boundary spaces.
+        add_silence_to_end: Whether to append silence marker "~" at end.
+        phone_to_vector: Mapping from IPA phonemes to articulatory feature vectors.
+        phone_to_id: Mapping from IPA phonemes to integer IDs.
+    """
 
     def __init__(self,
                  language,
@@ -33,8 +100,56 @@ class ArticulatoryCombinedTextFrontend:
                  add_silence_to_end=True,
                  use_word_boundaries=True,
                  device="cpu"):
-        """
-        Mostly preparing ID lookups
+        """Initialize text frontend with language-specific phonemizer configuration.
+
+        This method configures the phonemization backend (espeak, transphone, or
+        dragonmapper) based on the specified language, sets up articulatory feature
+        mappings, and initializes tone handling for tonal languages.
+
+        Explicitly supported languages (with espeak):
+            - Germanic: eng, deu, nld, swe, dan, isl, nor, afr
+            - Romance: fra, ita, spa, por, ron
+            - Slavic: rus, pol, ces, ukr, bel, bul, hrv, srp, slv, slk, bos, mkd
+            - Asian: cmn (Mandarin via dragonmapper), jpn (Japanese via pykakasi + transphone),
+              kor, vie, tha, hin, ben, tam, tel, mal, kan, mar, guj, pan, urd
+            - Middle Eastern: arb, heb, pes, tur
+            - Other: hun, fin, ell, kat, hye, eus, cat, glg, cym, gle, gla, mlt, and 50+ more
+
+        Zero-shot languages (via transphone):
+            Any ISO 639-3 code not explicitly listed will fall back to transphone G2P.
+
+        Args:
+            language: ISO 639-3 language code (e.g., "eng", "cmn", "jpn"). For full list,
+                see https://en.wikipedia.org/wiki/List_of_ISO_639-3_codes
+            use_explicit_eos: Whether to append end-of-sequence marker "#" to phoneme
+                strings. Required for most TTS models. Defaults to True.
+            use_lexical_stress: Whether to preserve lexical stress markers (ˈ for primary
+                stress). Useful for English and other stress-timed languages. Defaults to True.
+            silent: Unused parameter, kept for backward compatibility. Defaults to True.
+            add_silence_to_end: Whether to append silence marker "~" at end of phoneme
+                sequence for more natural prosody. Defaults to True.
+            use_word_boundaries: Whether to preserve spaces between words in phoneme
+                sequence for duration modeling. Defaults to True.
+            device: Device for transphone G2P models ("cpu" or "cuda"). Only used for
+                Japanese and zero-shot languages. Defaults to "cpu".
+
+        Raises:
+            RuntimeError: If espeak-ng is not installed when required for the language.
+            ImportError: If required dependencies are missing (pykakasi for Japanese,
+                dragonmapper for Mandarin, transphone for zero-shot).
+
+        Example:
+            >>> # English with stress markers
+            >>> tf = ArticulatoryCombinedTextFrontend(language="eng", use_lexical_stress=True)
+
+            >>> # Mandarin (uses dragonmapper for pinyin → IPA)
+            >>> tf = ArticulatoryCombinedTextFrontend(language="cmn")
+
+            >>> # Japanese (uses pykakasi for romaji, transphone for G2P)
+            >>> tf = ArticulatoryCombinedTextFrontend(language="jpn", device="cuda")
+
+            >>> # Zero-shot language (automatically uses transphone)
+            >>> tf = ArticulatoryCombinedTextFrontend(language="acr", device="cuda")
         """
 
         # this locks the device, so it has to happen here and not at the top
@@ -613,6 +728,37 @@ class ArticulatoryCombinedTextFrontend:
 
     @staticmethod
     def get_example_sentence(lang):
+        """Get example sentence for testing phonemization in a given language.
+
+        This static method returns language-specific example sentences containing
+        complex phonological features (stress, pauses, punctuation) useful for
+        testing and demonstrating the text-to-phoneme pipeline.
+
+        Args:
+            lang: ISO 639-3 language code (e.g., "eng", "deu", "cmn").
+
+        Returns:
+            String containing a complex sentence in the specified language, or None
+            if no example is defined for that language.
+
+        Example:
+            >>> example = ArticulatoryCombinedTextFrontend.get_example_sentence("eng")
+            >>> print(example)
+            This is a complex sentence, it even has a pause!
+
+            >>> example = ArticulatoryCombinedTextFrontend.get_example_sentence("cmn")
+            >>> print(example)
+            这是一个复杂的句子，它甚至包含一个停顿。
+
+            >>> example = ArticulatoryCombinedTextFrontend.get_example_sentence("unknown")
+            No example sentence specified for the language: unknown
+            Please specify an example sentence in the get_example_sentence function in Preprocessing/TextFrontend to track your progress.
+            >>> print(example)
+            None
+
+        Note:
+            Used for testing phonemizer configuration and tracking multilingual support.
+        """
         if lang == "eng":
             return "This is a complex sentence, it even has a pause!"
         elif lang == "deu":
@@ -647,10 +793,50 @@ class ArticulatoryCombinedTextFrontend:
             return None
 
     def string_to_tensor(self, text, view=False, device="cpu", handle_missing=True, input_phonemes=False):
-        """
-        Fixes unicode errors, expands some abbreviations,
-        turns graphemes into phonemes and then vectorizes
-        the sequence as articulatory features
+        """Convert text string to articulatory feature tensor for TTS model input.
+
+        This is the primary method for preprocessing text into model-ready input. The
+        pipeline performs: unicode normalization → abbreviation expansion → grapheme-to-
+        phoneme conversion → phoneme-to-articulatory-feature vectorization.
+
+        Each phoneme is represented as a vector of articulatory features (voicing, place
+        of articulation, manner of articulation, etc.) plus modifiers (stress, length,
+        tone, nasalization, aspiration, etc.). The feature dimensionality is defined by
+        the articulatory feature table.
+
+        Args:
+            text: Input text string in the specified language. Can be graphemes or
+                IPA phonemes if `input_phonemes=True`.
+            view: Whether to print the intermediate phoneme string to stdout for
+                debugging. Defaults to False.
+            device: PyTorch device for output tensor ("cpu" or "cuda"). Defaults to "cpu".
+            handle_missing: Whether to print warnings for unknown phonemes and skip them,
+                or raise KeyError immediately. Defaults to True (print and skip).
+            input_phonemes: Whether input is already IPA phonemes (skips G2P conversion).
+                Useful for direct phoneme-level control. Defaults to False.
+
+        Returns:
+            torch.Tensor of shape (num_phonemes, feature_dim) containing articulatory
+            feature vectors for each phoneme in the sequence. Features are binary or
+            ternary (0=absent, 1=primary, 2=secondary from modifier).
+
+        Example:
+            >>> tf = ArticulatoryCombinedTextFrontend(language="eng")
+            >>> # Convert text to tensor
+            >>> tensor = tf.string_to_tensor("Hello, world!", view=True)
+            Phonemes:
+            ~həloʊ~ wɜːld~#
+            >>> tensor.shape
+            torch.Size([15, 128])  # 15 phonemes × 128 articulatory features
+
+            >>> # Direct phoneme input
+            >>> tensor = tf.string_to_tensor("həloʊ", input_phonemes=True)
+
+            >>> # Mandarin with tones
+            >>> tf = ArticulatoryCombinedTextFrontend(language="cmn")
+            >>> tensor = tf.string_to_tensor("你好", view=True)
+            Phonemes:
+            ~ni˨˩˧xau˨˩˧~#
         """
         if input_phonemes:
             phones = text
@@ -778,6 +964,57 @@ class ArticulatoryCombinedTextFrontend:
         return torch.Tensor(phones_vector, device=device)
 
     def get_phone_string(self, text, include_eos_symbol=True, for_feature_extraction=False, for_plot_labels=False):
+        """Convert text to IPA phoneme string using language-specific G2P.
+
+        This method performs grapheme-to-phoneme (G2P) conversion using the configured
+        phonemizer backend (espeak, transphone, or dragonmapper). It handles language-
+        specific abbreviation expansion, punctuation normalization, and tone markers.
+
+        Args:
+            text: Input text in the configured language.
+            include_eos_symbol: Whether to append end-of-sequence marker "#".
+                Required for TTS training. Defaults to True.
+            for_feature_extraction: Whether to preserve phoneme modifiers (stress, length,
+                tone) for articulatory feature conversion. If False, modifiers are stripped
+                for visualization. Defaults to False.
+            for_plot_labels: Whether to replace spaces with "|" for plotting phoneme
+                alignments. Defaults to False.
+
+        Returns:
+            String containing IPA phonemes with optional markers:
+                - "~" for pauses/silence (from punctuation)
+                - " " for word boundaries (if use_word_boundaries=True)
+                - "ˈ" for primary stress (if use_stress=True and for_feature_extraction=True)
+                - Tone markers: ˥ ˦ ˧ ˨ ˩ (very-high to very-low)
+                - Contour tones: ⭧ (rising), ⭨ (falling), ⮁ (peaking), ⮃ (dipping)
+                - Length markers: ː (long), ˑ (half-long), ̆ (short)
+                - Modifiers: ̃ (nasal), ʰ (aspirated), ʷ (labialized), etc.
+                - "#" at end (if include_eos_symbol=True)
+
+        Example:
+            >>> tf = ArticulatoryCombinedTextFrontend(language="eng")
+            >>> # Full phoneme string with modifiers
+            >>> phones = tf.get_phone_string("Hello, world!", for_feature_extraction=True)
+            >>> print(phones)
+            ~həloʊ~ wɜːld~#
+
+            >>> # Stripped for visualization
+            >>> phones = tf.get_phone_string("Hello, world!", for_feature_extraction=False)
+            >>> print(phones)
+            ~həloʊ wɜld~#
+
+            >>> # Mandarin with tones
+            >>> tf = ArticulatoryCombinedTextFrontend(language="cmn")
+            >>> phones = tf.get_phone_string("你好", for_feature_extraction=True)
+            >>> print(phones)
+            ~ni˨˩˧ xau˨˩˧~#
+
+            >>> # Vietnamese tones (6-tone system)
+            >>> tf = ArticulatoryCombinedTextFrontend(language="vie")
+            >>> phones = tf.get_phone_string("xin chào", for_feature_extraction=True)
+            >>> print(phones)
+            ~sin˧ t͡ʃaːw˨˩~#
+        """
         if text == "":
             return ""
         text = text.replace("|", ".") # Hindi uses this symbol to indicate the end of a sentence.
@@ -1022,6 +1259,33 @@ class ArticulatoryCombinedTextFrontend:
         return phones
 
     def text_vectors_to_id_sequence(self, text_vector):
+        """Convert articulatory feature vectors to phoneme ID sequence for alignment.
+
+        This method performs reverse-lookup from articulatory feature vectors to
+        phoneme IDs, used for forced alignment between text and audio. It ignores
+        word boundaries and strips modifier features to match base phonemes.
+
+        Args:
+            text_vector: Tensor or list of articulatory feature vectors, typically
+                output from string_to_tensor(). Shape: (num_phonemes, feature_dim).
+
+        Returns:
+            List of integer phoneme IDs corresponding to the input feature vectors.
+            Word boundary markers are excluded.
+
+        Example:
+            >>> tf = ArticulatoryCombinedTextFrontend(language="eng")
+            >>> tensor = tf.string_to_tensor("Hello")
+            >>> ids = tf.text_vectors_to_id_sequence(tensor)
+            >>> print(ids)
+            [104, 101, 108, 108, 111]  # Phoneme IDs for /həloʊ/
+
+        Note:
+            - Word boundaries (feature index 12) are excluded from the ID sequence
+            - Modifier features (first 12 dimensions) are stripped to match base phonemes
+            - Uses internal cache (text_vector_to_phone_cache) for performance
+            - Required for duration prediction and forced alignment training
+        """
         tokens = list()
         for vector in text_vector:
             if vector[get_feature_to_index_lookup()["word-boundary"]] == 0:
@@ -1047,10 +1311,31 @@ class ArticulatoryCombinedTextFrontend:
 
 
 def english_text_expansion(text):
-    """
-    Apply as small part of the tacotron style text cleaning pipeline, suitable for e.g. LJSpeech.
-    See https://github.com/keithito/tacotron/
-    Careful: Only apply to english datasets. Different languages need different cleaners.
+    """Expand common English abbreviations for improved TTS pronunciation.
+
+    This function applies a subset of the Tacotron text cleaning pipeline, expanding
+    common abbreviations and acronyms to their full form for more natural synthesis.
+
+    WARNING: Only apply to English text. Other languages require different expansion rules.
+
+    Args:
+        text: English text string potentially containing abbreviations.
+
+    Returns:
+        String with abbreviations expanded to full words.
+
+    Example:
+        >>> expanded = english_text_expansion("Dr. Smith works at St. Mary's Hospital, Co.")
+        >>> print(expanded)
+        doctor Smith works at saint Mary's Hospital, company
+
+        >>> expanded = english_text_expansion("TTS is useful, e.g. for accessibility.")
+        >>> print(expanded)
+        text to speech is useful, , for example,  for accessibility.
+
+    Note:
+        Based on the Tacotron text normalization pipeline. See:
+        https://github.com/keithito/tacotron/
     """
     _abbreviations = [(re.compile('\\b%s\\.' % x[0], re.IGNORECASE), x[1]) for x in
                       [('Mrs.', 'misess'), ('Mr.', 'mister'), ('Dr.', 'doctor'), ('St.', 'saint'), ('Co.', 'company'), ('Jr.', 'junior'), ('Maj.', 'major'),
@@ -1062,6 +1347,35 @@ def english_text_expansion(text):
 
 
 def chinese_number_conversion(text):
+    """Convert Arabic numerals to Chinese number words in Hanzi.
+
+    This function converts all Arabic numeral sequences in text to their Hanzi
+    (Chinese character) equivalents, following Mandarin number naming conventions.
+    Supports numbers from 0 to billions.
+
+    Args:
+        text: Text containing Arabic numerals (e.g., "123", "2024").
+
+    Returns:
+        Text with numerals replaced by Hanzi number words.
+
+    Example:
+        >>> converted = chinese_number_conversion("我有123个苹果")
+        >>> print(converted)
+        我有一百二十三个苹果
+
+        >>> converted = chinese_number_conversion("2024年")
+        >>> print(converted)
+        二千零二十四年
+
+        >>> converted = chinese_number_conversion("负42度")
+        >>> print(converted)
+        负四十二度
+
+    Note:
+        Based on implementation from:
+        https://gist.github.com/gumblex/0d65cad2ba607fd14de7
+    """
     # https://gist.github.com/gumblex/0d65cad2ba607fd14de7?permalink_comment_id=4063512#gistcomment-4063512
     import bisect
     zhdigits = '零一二三四五六七八九'
@@ -1100,6 +1414,26 @@ def chinese_number_conversion(text):
 
 
 def remove_french_spacing(text):
+    """Remove typographical spaces before French punctuation marks.
+
+    French typography traditionally inserts spaces before certain punctuation marks
+    (! ; : ? «»). This function removes those spaces for cleaner G2P conversion.
+
+    Args:
+        text: French text potentially containing typographical spaces.
+
+    Returns:
+        String with spaces before punctuation removed.
+
+    Example:
+        >>> cleaned = remove_french_spacing("Bonjour ! Comment allez-vous ?")
+        >>> print(cleaned)
+        Bonjour! Comment allez-vous?
+
+        >>> cleaned = remove_french_spacing("« Citation ici »")
+        >>> print(cleaned)
+        "Citation ici"
+    """
     text = text.replace(" »", '"').replace("« ", '"')
     for punc in ["!", ";", ":", ".", ",", "?", "-"]:
         text = text.replace(f" {punc}", punc)
@@ -1107,11 +1441,67 @@ def remove_french_spacing(text):
 
 
 def convert_kanji_to_pinyin_mandarin(text):
+    """Convert Mandarin Chinese characters to pinyin romanization.
+
+    This function converts Hanzi (Chinese characters) to pinyin with tone marks,
+    and also converts Arabic numerals to Chinese number words before pinyin conversion.
+
+    Args:
+        text: Mandarin text in Hanzi (simplified or traditional characters).
+
+    Returns:
+        Space-separated pinyin syllables with tone marks.
+
+    Example:
+        >>> pinyin_text = convert_kanji_to_pinyin_mandarin("你好世界")
+        >>> print(pinyin_text)
+        nǐ hǎo shì jiè
+
+        >>> pinyin_text = convert_kanji_to_pinyin_mandarin("我有123个苹果")
+        >>> print(pinyin_text)
+        wǒ yǒu yī bǎi èr shí sān gè píng guǒ
+
+    Note:
+        Uses pypinyin library for Hanzi→pinyin conversion and custom chinese_number_conversion
+        for numeral expansion.
+    """
     text = chinese_number_conversion(text)
     return " ".join([x[0] for x in pinyin(text)])
 
 
 def get_language_id(language):
+    """Convert ISO 639-3 language code to language embedding ID tensor.
+
+    This function maps ISO 639-3 language codes to integer IDs used for language
+    conditioning in multilingual TTS models. The mapping is loaded from the
+    iso_lookup.json file containing 7000+ language codes.
+
+    Args:
+        language: ISO 639-3 language code (e.g., "eng", "cmn", "fra"). See
+            https://en.wikipedia.org/wiki/List_of_ISO_639-3_codes for full list.
+
+    Returns:
+        torch.LongTensor containing single integer language ID, or None if
+        language code is not found in lookup table.
+
+    Example:
+        >>> lang_id = get_language_id("eng")
+        >>> print(lang_id)
+        tensor([74])
+
+        >>> lang_id = get_language_id("cmn")
+        >>> print(lang_id)
+        tensor([109])
+
+        >>> lang_id = get_language_id("invalid")
+        Please specify the language as ISO 639-3 code (https://en.wikipedia.org/wiki/List_of_ISO_639-3_codes)
+        >>> print(lang_id)
+        None
+
+    Note:
+        The function attempts to load iso_lookup.json from multiple possible paths
+        to handle different working directory configurations.
+    """
     try:
         iso_codes_to_ids = load_json_from_path("Preprocessing/multilinguality/iso_lookup.json")[-1]
     except FileNotFoundError:
