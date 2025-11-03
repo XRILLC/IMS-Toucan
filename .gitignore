@@ -34,3 +34,9 @@ run_phonemizer.py
 *.pdf
 *.pkl
 *.gif
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+.eggs/
