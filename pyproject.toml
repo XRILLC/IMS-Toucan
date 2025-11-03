@@ -147,8 +147,27 @@ toucan-infer = "ims_toucan.cli.infer:main"
 toucan-serve = "ims_toucan.service:serve"
 
 [tool.setuptools]
-packages = ["ims_toucan"]
-package-dir = {"" = "src"}
+packages = [
+    "ims_toucan",
+    "ims_toucan.cli",
+    "ims_toucan.service",
+    "InferenceInterfaces",
+    "Modules",
+    "Modules.Aligner",
+    "Modules.ControllabilityGAN",
+    "Modules.ControllabilityGAN.dataset",
+    "Modules.ControllabilityGAN.wgan",
+    "Modules.EmbeddingModel",
+    "Modules.GeneralLayers",
+    "Modules.ToucanTTS",
+    "Modules.Vocoder",
+    "Preprocessing",
+    "Preprocessing.Codec",
+    "Preprocessing.multilinguality",
+    "Utility",
+    "Recipes",
+]
+package-dir = {"ims_toucan" = "src/ims_toucan"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -13,5 +13,7 @@ __version__ = "0.1.0"
 __author__ = "Florian Lux"
 __email__ = "florian.lux@ims.uni-stuttgart.de"
 
-# Public API - will be properly wired up after moving code to src/
-__all__ = ["__version__"]
+# Public API - expose main TTS interface
+from InferenceInterfaces.ToucanTTSInterface import ToucanTTSInterface as ToucanTTS
+
+__all__ = ["ToucanTTS", "__version__"]
