@@ -1,9 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ims-toucan"
 version = "0.1.0"
 description = "Massively multilingual Text-to-Speech toolkit supporting 7000+ languages"
 readme = "README.md"
 requires-python = ">=3.13"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Florian Lux", email = "florian.lux@ims.uni-stuttgart.de"},
+]
+keywords = ["tts", "text-to-speech", "speech-synthesis", "multilingual", "deep-learning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
 dependencies = [
     # Core ML framework
     "torch",
@@ -88,6 +106,25 @@ geo = [
     "geopy",
 ]
 
+# Development dependencies
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "pytest-xdist>=3.5",  # Parallel test execution
+    "interrogate>=1.5",   # Docstring coverage
+    "ruff>=0.1.0",        # Linting and formatting
+    "mypy>=1.8",          # Type checking
+    "pre-commit>=3.6",    # Git hooks
+]
+
+# API service dependencies
+service = [
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+]
+
 # Everything
 all = [
     "pykakasi",
@@ -101,3 +138,84 @@ all = [
     "wandb",
     "geopy",
 ]
+
+[project.scripts]
+# CLI entry points
+toucan-tts = "ims_toucan.cli:main"
+toucan-train = "ims_toucan.cli.train:main"
+toucan-infer = "ims_toucan.cli.infer:main"
+toucan-serve = "ims_toucan.service:serve"
+
+[tool.setuptools]
+packages = ["ims_toucan"]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=ims_toucan",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ims_toucan"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Gradual typing
+check_untyped_defs = true
+
+[tool.interrogate]
+ignore-init-method = true
+ignore-init-module = false
+ignore-magic = false
+ignore-semiprivate = false
+ignore-private = false
+ignore-property-decorators = false
+ignore-module = false
+ignore-nested-functions = false
+ignore-nested-classes = true
+ignore-setters = false
+fail-under = 80
+exclude = ["setup.py", "docs", "build"]
+verbose = 2
+quiet = false
+color = true
