@@ -1,3 +1,17 @@
+"""High-level TTS interface for ToucanTTS multilingual speech synthesis.
+
+This module provides the primary user-facing API for ToucanTTS, handling model
+loading, text-to-speech conversion, voice cloning, and audio playback. It supports
+7000+ languages, multi-speaker synthesis, and controllable prosody.
+
+Example:
+    >>> from InferenceInterfaces.ToucanTTSInterface import ToucanTTSInterface
+    >>> tts = ToucanTTSInterface(device="cuda", language="eng")
+    >>> tts.set_utterance_embedding("reference_voice.wav")
+    >>> tts.read_to_file(["Hello world"], "output.wav")
+    >>> tts.read_aloud("This is a test", view=True)
+"""
+
 import itertools
 import os
 
@@ -198,9 +212,39 @@ class ToucanTTSInterface(torch.nn.Module):
             self.language = lang_id
 
     def set_phonemizer_language(self, lang_id):
+        """Set the language for text-to-phoneme conversion.
+
+        This method initializes a new TextFrontend with the specified language for
+        grapheme-to-phoneme conversion. Called automatically by set_language().
+
+        Args:
+            lang_id: ISO 639-3 language code (e.g., "eng", "cmn", "fra").
+
+        Note:
+            This reinitializes the text frontend, discarding any cached state.
+        """
         self.text2phone = ArticulatoryCombinedTextFrontend(language=lang_id, add_silence_to_end=True, device=self.device)
 
     def set_accent_language(self, lang_id):
+        """Set the language embedding ID for prosody/accent conditioning.
+
+        This method maps ISO 639-3 language codes to language embedding IDs used for
+        conditioning the acoustic model. Handles regional variants and dialects by
+        mapping them to base languages. Called automatically by set_language().
+
+        Args:
+            lang_id: ISO 639-3 language code or regional variant code (e.g., "eng",
+                "en-us", "en-sc", "vi-ctr", "pt-br").
+
+        Note:
+            Regional variants are mapped to base languages:
+                - "en-us", "en-sc" → "eng"
+                - "vi-ctr", "vi-so" → "vie"
+                - "pt-br" → "por"
+                - "spa-lat" → "spa"
+                - "fr-be", "fr-sw" → "fra"
+            Unknown codes default to "eng".
+        """
         if lang_id in {'ajp', 'ajt', 'lak', 'lno', 'nul', 'pii', 'plj', 'slq', 'smd', 'snb', 'tpw', 'wya', 'zua', 'en-us', 'en-sc', 'fr-be', 'fr-sw', 'pt-br', 'spa-lat', 'vi-ctr', 'vi-so'}:
             if lang_id == 'vi-so' or lang_id == 'vi-ctr':
                 lang_id = 'vie'
@@ -395,6 +439,45 @@ class ToucanTTSInterface(torch.nn.Module):
                    energy_variance_scale=1.0,
                    blocking=False,
                    prosody_creativity=0.1):
+        """Synthesize speech from text and play through system audio output.
+
+        This method generates speech audio from text and plays it through the default
+        system audio device using sounddevice. Useful for interactive TTS applications
+        and testing.
+
+        Args:
+            text: Input text string to synthesize.
+            view: Whether to display phoneme-duration alignment plot. Defaults to False.
+            duration_scaling_factor: Speed control multiplier. Values < 1.0 speed up
+                (e.g., 0.8 = 25% faster), values > 1.0 slow down (e.g., 1.2 = 20% slower).
+                Defaults to 1.0 (normal speed).
+            pitch_variance_scale: Pitch variation control. 0.0 = monotone, 1.0 = natural,
+                > 1.0 = exaggerated. Defaults to 1.0.
+            energy_variance_scale: Energy/loudness variation control. 0.0 = flat,
+                1.0 = natural, > 1.0 = exaggerated. Defaults to 1.0.
+            blocking: Whether to block execution until playback finishes. If True,
+                waits for audio to complete before returning. Defaults to False.
+            prosody_creativity: Randomness in prosody prediction (0.0-1.0). Higher values
+                add more variation. Defaults to 0.1.
+
+        Example:
+            >>> tts = ToucanTTSInterface(device="cuda", language="eng")
+            >>> # Play with default settings
+            >>> tts.read_aloud("Hello world")
+
+            >>> # Play slower with visualization
+            >>> tts.read_aloud("This is a test", view=True, duration_scaling_factor=1.3)
+
+            >>> # Play and wait for completion
+            >>> tts.read_aloud("Please wait for me", blocking=True)
+            >>> print("Audio playback finished")
+
+        Note:
+            - Empty or whitespace-only text is ignored
+            - Audio is played asynchronously by default (non-blocking)
+            - 0.5 seconds of silence is added before and after speech
+            - Visualization plot is displayed using matplotlib if view=True
+        """
         if text.strip() == "":
             return
         wav, sr = self(text,
