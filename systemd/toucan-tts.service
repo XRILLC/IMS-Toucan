@@ -1,0 +1,40 @@
+[Unit]
+Description=IMS-Toucan TTS REST API Service
+After=network.target
+Documentation=https://github.com/DigitalPhonetics/IMS-Toucan
+
+[Service]
+Type=simple
+User=toucan
+Group=toucan
+WorkingDirectory=/opt/ims-toucan
+Environment="PATH=/opt/ims-toucan/.venv/bin"
+ExecStart=/opt/ims-toucan/.venv/bin/toucan-serve --host 0.0.0.0 --port 8000 --device cpu --language eng
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ims-toucan/Models /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Resource limits
+MemoryLimit=4G
+CPUQuota=200%
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=toucan-tts
+
+[Install]
+WantedBy=multi-user.target
