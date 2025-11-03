@@ -93,7 +93,7 @@ class CodecAlignerDataset(Dataset):
         key_list = list(self.path_to_transcript_dict.keys())
         with open(os.path.join(cache_dir, "files_used.txt"), encoding='utf8', mode="w") as files_used_note:
             files_used_note.write(str(key_list))
-        fisher_yates_shuffle(key_list)
+        random.shuffle(key_list)
         # build cache
         print("... building dataset cache ...")
         torch.hub._validate_not_a_forked_repo = lambda a, b, c: True  # torch 1.9 has a bug in the hub loading, this is a workaround
@@ -288,11 +288,6 @@ class CodecAlignerDataset(Dataset):
                    os.path.join(self.cache_dir, "aligner_train_cache.pt"))
         print("Dataset updated!")
 
-
-def fisher_yates_shuffle(lst):
-    for i in range(len(lst) - 1, 0, -1):
-        j = random.randint(0, i)
-        lst[i], lst[j] = lst[j], lst[i]
 
 
 def invert_segments(segments, total_duration):

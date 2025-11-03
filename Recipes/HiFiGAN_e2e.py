@@ -38,8 +38,8 @@ def run(gpu_id, resume_checkpoint, finetune, resume, model_dir, use_wandb, wandb
     file_lists_for_this_run_combined_synthetic = list()
 
     fl = list(build_path_to_transcript_libritts_all_clean().keys())
-    fisher_yates_shuffle(fl)
-    fisher_yates_shuffle(fl)
+    random.shuffle(fl)
+    random.shuffle(fl)
     for i, f in enumerate(fl):
         if os.path.exists(f.replace(".wav", "_synthetic_spec.pt")):
             file_lists_for_this_run_combined.append(f)
@@ -74,7 +74,3 @@ def run(gpu_id, resume_checkpoint, finetune, resume, model_dir, use_wandb, wandb
         wandb.finish()
 
 
-def fisher_yates_shuffle(lst):
-    for i in range(len(lst) - 1, 0, -1):
-        j = random.randint(0, i)
-        lst[i], lst[j] = lst[j], lst[i]

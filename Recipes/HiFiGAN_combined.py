@@ -236,9 +236,9 @@ def run(gpu_id, resume_checkpoint, finetune, resume, model_dir, use_wandb, wandb
 
     print("filepaths collected")
 
-    fisher_yates_shuffle(file_lists_for_this_run_combined)
-    fisher_yates_shuffle(file_lists_for_this_run_combined)
-    fisher_yates_shuffle(file_lists_for_this_run_combined)
+    random.shuffle(file_lists_for_this_run_combined)
+    random.shuffle(file_lists_for_this_run_combined)
+    random.shuffle(file_lists_for_this_run_combined)
     print("filepaths randomized")
 
     selection = file_lists_for_this_run_combined[:250000]  # adjust the sample size until it fits into RAM
@@ -258,8 +258,8 @@ def run(gpu_id, resume_checkpoint, finetune, resume, model_dir, use_wandb, wandb
     if sr >= 24000 or take_all:
         selection += fl
 
-    fisher_yates_shuffle(selection)
-    fisher_yates_shuffle(selection)
+    random.shuffle(selection)
+    random.shuffle(selection)
 
     train_set = HiFiGANDataset(list_of_paths=selection, use_random_corruption=False)
 
@@ -288,7 +288,3 @@ def run(gpu_id, resume_checkpoint, finetune, resume, model_dir, use_wandb, wandb
         wandb.finish()
 
 
-def fisher_yates_shuffle(lst):
-    for i in range(len(lst) - 1, 0, -1):
-        j = random.randint(0, i)
-        lst[i], lst[j] = lst[j], lst[i]
