@@ -22,7 +22,7 @@ import sounddevice
 import soundfile
 import torch
 from huggingface_hub import hf_hub_download
-from speechbrain.pretrained import EncoderClassifier
+from speechbrain.inference import EncoderClassifier
 from torchaudio.transforms import Resample
 
 from Modules.ToucanTTS.InferenceToucanTTS import ToucanTTS
